@@ -63,7 +63,7 @@ tasks:
         fi
       - task: download
       - cargo install uniffi-bindgen-cs --git https://github.com/NordSecurity/uniffi-bindgen-cs.git --tag {{.UNIFFI_BINDGEN_CS_VERSION}} 2>/dev/null || true
-      - mkdir -p SlimBindings/generated
+      - mkdir -p Slim/generated
       - |
         if [ -f "runtimes/osx-arm64/native/libslim_bindings.dylib" ]; then
           lib="$(pwd)/runtimes/osx-arm64/native/libslim_bindings.dylib"
@@ -73,31 +73,31 @@ tasks:
           lib="$(pwd)/runtimes/linux-x64/native/libslim_bindings.so"
         fi
         cd {{.SLIM_DIR}}/data-plane/bindings/rust
-        uniffi-bindgen-cs --library "$lib" --out-dir "$OLDPWD/SlimBindings/generated"
-      - echo "Bindings regenerated. Commit SlimBindings/generated/ if changed."
+        uniffi-bindgen-cs --library "$lib" --out-dir "$OLDPWD/Slim/generated"
+      - echo "Bindings regenerated. Commit Slim/generated/ if changed."
 
   build:
     desc: Build the C# project
     cmds:
-      - dotnet build SlimBindings.sln
+      - dotnet build Slim.sln
 
   test:
     desc: Run tests
     cmds:
-      - dotnet test SlimBindings.sln {{.CLI_ARGS}}
+      - dotnet test Slim.sln {{.CLI_ARGS}}
 
   test:smoke:
     desc: Run smoke tests (no server required)
     cmds:
-      - dotnet test SlimBindings.sln --filter "Category!=Integration" {{.CLI_ARGS}}
+      - dotnet test Slim.sln --filter "Category!=Integration" {{.CLI_ARGS}}
 
   pack:
     desc: Create NuGet package
     cmds:
-      - dotnet pack SlimBindings/SlimBindings.csproj -c Release -o packages/
+      - dotnet pack Slim/Slim.csproj -c Release -o packages/
 
   clean:
     desc: Clean build artifacts
     cmds:
       - rm -rf runtimes packages artifacts
-      - dotnet clean SlimBindings.sln 2>/dev/null || true
+      - dotnet clean Slim.sln 2>/dev/null || true

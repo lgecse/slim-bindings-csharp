@@ -60,19 +60,19 @@ jobs:
           rm -rf artifacts
 
       - name: Build
-        run: dotnet build SlimBindings.sln -c Release
+        run: dotnet build Slim.sln -c Release
 
       - name: Copy native library to test output
         run: |
           cp runtimes/linux-x64/native/libslim_bindings.so \
-             SlimBindings.Tests/bin/Release/net8.0/
+             Slim.Tests/bin/Release/net8.0/
 
       - name: Test
-        run: dotnet test SlimBindings.sln -c Release --filter "Category!=Integration" --no-build
+        run: dotnet test Slim.sln -c Release --filter "Category!=Integration" --no-build
 
       - name: Create NuGet package
         if: github.event_name == 'push'
-        run: dotnet pack SlimBindings/SlimBindings.csproj -c Release -o packages/
+        run: dotnet pack Slim/Slim.csproj -c Release -o packages/
 
       - name: Upload package
         if: github.event_name == 'push'

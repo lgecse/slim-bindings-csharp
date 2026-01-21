@@ -1,13 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <!-- Assembly Info -->
+    <RootNamespace>Agntcy.Slim</RootNamespace>
+    <AssemblyName>Agntcy.Slim</AssemblyName>
+    
     <!-- Package Info -->
-    <PackageId>Agntcy.SlimBindings</PackageId>
+    <PackageId>Agntcy.Slim</PackageId>
     <Version>0.7.0</Version>
     <Authors>AGNTCY Contributors</Authors>
     <Company>AGNTCY</Company>
-    <Description>C# bindings for SLIM (Secure Low-Latency Interactive Messaging)</Description>
-    <PackageTags>slim;messaging;secure;low-latency;ffi;agntcy;uniffi</PackageTags>
+    <Description>C# SDK for SLIM (Secure Low-Latency Interactive Messaging)</Description>
+    <PackageTags>slim;messaging;secure;low-latency;sdk;agntcy</PackageTags>
     <RepositoryUrl>https://github.com/agntcy/slim-bindings-csharp</RepositoryUrl>
     <PackageProjectUrl>https://github.com/agntcy/slim-bindings-csharp</PackageProjectUrl>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>

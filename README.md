@@ -1,26 +1,33 @@
-# SLIM C# Bindings
+# SLIM C# SDK
 
-C# bindings for [SLIM](https://github.com/agntcy/slim) (Secure Low-Latency Interactive Messaging).
+C# SDK for [SLIM](https://github.com/agntcy/slim) (Secure Low-Latency Interactive Messaging).
 
-These bindings are auto-generated using [uniffi-bindgen-cs](https://github.com/NordSecurity/uniffi-bindgen-cs) from the same Rust UniFFI definitions used for Go, Python, and other language bindings, with a clean public API wrapper.
+This SDK provides an idiomatic C# API built on top of auto-generated bindings from [uniffi-bindgen-cs](https://github.com/NordSecurity/uniffi-bindgen-cs).
 
 ## Requirements
 
 - .NET 8.0 or higher
-
-**For building from source only:**
-- [Task](https://taskfile.dev/)
-- [Rust](https://rustup.rs/)
+- [GitHub CLI](https://cli.github.com/) (for downloading native libraries)
+- [Task](https://taskfile.dev/) (optional, for build automation)
 
 ## Quick Start
 
 ### Using NuGet Package
 
 ```bash
-dotnet add package Agntcy.SlimBindings
+dotnet add package Agntcy.Slim
 ```
 
 The NuGet package includes native libraries for all supported platforms. No additional setup required!
+
+```csharp
+using Agntcy.Slim;
+
+Slim.Initialize();
+var service = Slim.GetGlobalService();
+// ...
+Slim.Shutdown();
+```
 
 ### Building from Source
 
@@ -30,18 +37,11 @@ The NuGet package includes native libraries for all supported platforms. No addi
    cd slim-bindings-csharp
    ```
 
-2. **Ensure the SLIM repository is available:**
-   The build expects the SLIM repo at `../slim`. You can override this:
-   ```bash
-   # Clone SLIM if needed
-   git clone https://github.com/agntcy/slim ../slim
-   ```
-
-3. **Generate bindings and build:**
+2. **Download native libraries and build:**
    ```bash
    # Install task if needed: https://taskfile.dev/installation/
-   task generate  # Generates C# bindings from Rust library
-   task build     # Builds the .NET solution
+   task setup  # Downloads pre-built native libraries
+   task build  # Builds the .NET solution
    ```
 
 ## API Overview
@@ -86,27 +86,25 @@ task test
 
 ```bash
 task                  # List all available tasks
-task generate         # Generate C# bindings (builds Rust library first)
-task build            # Build the .NET solution (runs generate first)
+task setup            # Download pre-built native libraries
+task build            # Build the .NET solution
 task test             # Run all tests
 task test:smoke       # Run smoke tests (no server required)
-task test:integration # Run integration tests (requires server)
 task pack             # Create NuGet package
 task clean            # Clean all build artifacts
+task regenerate       # Regenerate C# bindings (requires slim repo)
 ```
 
 ### Regenerating Bindings
 
-If you modify the Rust bindings in the SLIM repository:
+If the SLIM bindings change upstream:
 
 ```bash
-task clean
-task generate
+# Requires slim repo at ../slim
+task regenerate
+git add Slim/generated/
+git commit -m "Regenerate bindings for vX.Y.Z"
 ```
-
-### uniffi-bindgen-cs Version
-
-This project uses `uniffi-bindgen-cs v0.9.0+v0.28.3`, which matches the UniFFI version used in SLIM (v0.28.3).
 
 ## Platform Support
 
@@ -124,7 +122,7 @@ The NuGet package includes native libraries for all supported platforms using th
 
 ```bash
 # Install the package
-dotnet add package Agntcy.SlimBindings
+dotnet add package Agntcy.Slim
 
 # Build and run - native library is automatically included
 dotnet run

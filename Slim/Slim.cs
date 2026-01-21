@@ -4,7 +4,7 @@
 using System.Text;
 using Internal = uniffi.slim_bindings;
 
-namespace SlimBindings;
+namespace Agntcy.Slim;
 
 /// <summary>
 /// Main entry point for SLIM bindings. Provides initialization and global service access.

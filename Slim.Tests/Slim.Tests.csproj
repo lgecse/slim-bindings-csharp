@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <RootNamespace>Agntcy.Slim.Tests</RootNamespace>
+    <AssemblyName>Agntcy.Slim.Tests</AssemblyName>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
@@ -19,7 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\SlimBindings\SlimBindings.csproj" />
+    <ProjectReference Include="..\Slim\Slim.csproj" />
   </ItemGroup>
 
   <!-- Copy native libraries to test output -->
