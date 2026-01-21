@@ -52,29 +52,29 @@ tasks:
         rm -rf artifacts
       - echo "Libraries downloaded to runtimes/"
 
-  generate-bindings:
-    desc: Regenerate C# bindings (requires slim repo at ../slim)
+  regenerate:
+    desc: Regenerate C# bindings when upstream slim changes (requires slim repo)
     cmds:
       - |
         if [ ! -d "{{.SLIM_DIR}}/data-plane/bindings/rust" ]; then
           echo "Error: slim repo not found at {{.SLIM_DIR}}" >&2
-          echo "Clone it with: git clone https://github.com/agntcy/slim.git {{.SLIM_DIR}}" >&2
+          echo "Clone it: git clone https://github.com/agntcy/slim.git {{.SLIM_DIR}}" >&2
           exit 1
         fi
+      - task: download
       - cargo install uniffi-bindgen-cs --git https://github.com/NordSecurity/uniffi-bindgen-cs.git --tag {{.UNIFFI_BINDGEN_CS_VERSION}} 2>/dev/null || true
+      - mkdir -p SlimBindings/generated
       - |
-        cd {{.SLIM_DIR}}/data-plane/bindings/rust
-        cargo build --release
-      - |
-        if [ "$(uname -s)" = "Darwin" ]; then
-          lib="{{.SLIM_DIR}}/data-plane/target/release/libslim_bindings.dylib"
+        if [ -f "runtimes/osx-arm64/native/libslim_bindings.dylib" ]; then
+          lib="$(pwd)/runtimes/osx-arm64/native/libslim_bindings.dylib"
+        elif [ -f "runtimes/osx-x64/native/libslim_bindings.dylib" ]; then
+          lib="$(pwd)/runtimes/osx-x64/native/libslim_bindings.dylib"
         else
-          lib="{{.SLIM_DIR}}/data-plane/target/release/libslim_bindings.so"
+          lib="$(pwd)/runtimes/linux-x64/native/libslim_bindings.so"
         fi
-        mkdir -p SlimBindings/generated
         cd {{.SLIM_DIR}}/data-plane/bindings/rust
-        uniffi-bindgen-cs --library "$lib" --out-dir "$(pwd)/../../../../slim-bindings-csharp/SlimBindings/generated"
-      - echo "Bindings regenerated in SlimBindings/generated/"
+        uniffi-bindgen-cs --library "$lib" --out-dir "$OLDPWD/SlimBindings/generated"
+      - echo "Bindings regenerated. Commit SlimBindings/generated/ if changed."
 
   build:
     desc: Build the C# project
