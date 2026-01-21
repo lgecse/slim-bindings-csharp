@@ -4,209 +4,94 @@
 version: "3"
 
 vars:
-  # Supported targets for cross-compilation
-  MACOS_TARGETS: "aarch64-apple-darwin x86_64-apple-darwin"
-  LINUX_TARGETS: "x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu"
-  WINDOWS_TARGETS: "x86_64-pc-windows-gnu"
-
-  # The Rust UniFFI bindings crate - relative to slim repo
-  SLIM_DIR: '{{.SLIM_DIR | default "../slim"}}'
-  SLIM_DIR_ABS:
-    sh: 'cd {{.SLIM_DIR | default "../slim"}} && pwd'
-  BINDINGS_DIR: "{{.SLIM_DIR}}/data-plane/bindings/rust"
-  PROFILE: '{{.PROFILE | default "release"}}'
-  CURRENT_TARGET:
-    sh: 'rustc -vV | sed -n "s|host: ||p"'
-  TARGET: "{{.TARGET | default .CURRENT_TARGET}}"
-  LIB_NAME: slim_bindings
+  SLIM_BINDINGS_VERSION: '{{.SLIM_BINDINGS_VERSION | default "0.7.3"}}'
   UNIFFI_BINDGEN_CS_VERSION: "v0.9.0+v0.28.3"
-
-  # Computed paths (used by multiple tasks)
-  _TARGET_DIR: "{{.SLIM_DIR_ABS}}/data-plane/target/{{.TARGET}}/{{.PROFILE}}"
-  # Map Rust target to .NET Runtime Identifier (RID)
-  _RID:
-    sh: |
-      case "{{.TARGET}}" in
-        aarch64-apple-darwin)       echo "osx-arm64" ;;
-        x86_64-apple-darwin)        echo "osx-x64" ;;
-        aarch64-unknown-linux-gnu)  echo "linux-arm64" ;;
-        x86_64-unknown-linux-gnu)   echo "linux-x64" ;;
-        aarch64-unknown-linux-musl) echo "linux-musl-arm64" ;;
-        x86_64-unknown-linux-musl)  echo "linux-musl-x64" ;;
-        x86_64-pc-windows-gnu)      echo "win-x64" ;;
-        x86_64-pc-windows-msvc)     echo "win-x64" ;;
-        aarch64-pc-windows-msvc)    echo "win-arm64" ;;
-        *)                          echo "{{.TARGET}}" ;;
-      esac
-  # Default library path for current OS
-  _LIB_PATH:
-    sh: |
-      OS=$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')
-      case "$OS" in
-        darwin*)       echo "{{._TARGET_DIR}}/lib{{.LIB_NAME}}.dylib" ;;
-        mingw*|msys*|cygwin*) echo "{{._TARGET_DIR}}/{{.LIB_NAME}}.dll" ;;
-        *)             echo "{{._TARGET_DIR}}/lib{{.LIB_NAME}}.so" ;;
-      esac
-  LIB_PATH: "{{.LIB_PATH | default ._LIB_PATH}}"
 
 tasks:
   default:
     cmds:
       - task -l
 
-  # ---------------------------------------------------------------------------
-  # Internal helper tasks
-  # ---------------------------------------------------------------------------
-
-  install-uniffi-bindgen-cs:
-    internal: true
-    status:
-      - which uniffi-bindgen-cs
+  setup:
+    desc: Download pre-built libraries and generate C# bindings
     cmds:
-      - cargo install uniffi-bindgen-cs --git https://github.com/NordSecurity/uniffi-bindgen-cs.git --tag {{.UNIFFI_BINDGEN_CS_VERSION}} --config net.git-fetch-with-cli=true
-    silent: true
+      - task: download
+      - task: generate-bindings
 
-  cargo-build:
-    internal: true
-    desc: Build Rust library for TARGET
+  download:
+    desc: Download pre-built native libraries from slim release
     cmds:
-      - echo "Building Rust library for {{.TARGET}} ({{.PROFILE}})..."
-      - cd {{.BINDINGS_DIR}} && cargo build {{if eq .PROFILE "release"}}--release {{end}}--target {{.TARGET}}
-    silent: true
-
-  copy-native-lib:
-    internal: true
-    desc: Copy native library to runtimes directory
-    cmds:
-      - mkdir -p runtimes/{{._RID}}/native
+      - mkdir -p artifacts
+      - gh release download slim-bindings-libs-v{{.SLIM_BINDINGS_VERSION}} --repo agntcy/slim --pattern "*.zip" --dir artifacts/ --clobber
       - |
-        DEST="runtimes/{{._RID}}/native"
-        TARGET_DIR="{{._TARGET_DIR}}"
-        LIB="{{.LIB_NAME}}"
-        
-        if [ -f "$TARGET_DIR/lib${LIB}.dylib" ]; then
-          cp "$TARGET_DIR/lib${LIB}.dylib" "$DEST/"
-        elif [ -f "$TARGET_DIR/lib${LIB}.so" ]; then
-          cp "$TARGET_DIR/lib${LIB}.so" "$DEST/"
-        elif [ -f "$TARGET_DIR/${LIB}.dll" ]; then
-          cp "$TARGET_DIR/${LIB}.dll" "$DEST/"
-        else
-          echo "Error: No native library found in $TARGET_DIR" >&2
-          exit 1
-        fi
-        echo "Copied native library to $DEST/ ({{.TARGET}} -> {{._RID}})"
-    silent: true
+        for zip in artifacts/*.zip; do
+          target="${zip#artifacts/slim-bindings-}"
+          target="${target%.zip}"
+          case "$target" in
+            x86_64-unknown-linux-gnu)   rid="linux-x64" ;;
+            x86_64-unknown-linux-musl)  rid="linux-musl-x64" ;;
+            aarch64-unknown-linux-gnu)  rid="linux-arm64" ;;
+            aarch64-unknown-linux-musl) rid="linux-musl-arm64" ;;
+            x86_64-apple-darwin)        rid="osx-x64" ;;
+            aarch64-apple-darwin)       rid="osx-arm64" ;;
+            x86_64-pc-windows-msvc)     rid="win-x64" ;;
+            x86_64-pc-windows-gnu)      rid="win-x64-gnu" ;;
+            *) continue ;;
+          esac
+          mkdir -p "runtimes/$rid/native"
+          unzip -oj "$zip" -d "runtimes/$rid/native/"
+          for f in runtimes/$rid/native/*slim_bindings*; do
+            case "$f" in
+              *.so)    mv "$f" "runtimes/$rid/native/libslim_bindings.so" ;;
+              *.dylib) mv "$f" "runtimes/$rid/native/libslim_bindings.dylib" ;;
+              *.dll)   mv "$f" "runtimes/$rid/native/slim_bindings.dll" ;;
+            esac
+          done
+        done
+        rm -rf artifacts
+      - echo "Libraries downloaded to runtimes/"
 
-  # ---------------------------------------------------------------------------
-  # Generate bindings
-  # ---------------------------------------------------------------------------
-
-  generate:
-    desc: Generate C# bindings from compiled library
-    deps:
-      - install-uniffi-bindgen-cs
+  generate-bindings:
+    desc: Generate C# bindings from native library
     cmds:
-      - task: cargo-build
-      - echo "Generating C# bindings..."
+      - cargo install uniffi-bindgen-cs --git https://github.com/NordSecurity/uniffi-bindgen-cs.git --tag {{.UNIFFI_BINDGEN_CS_VERSION}} 2>/dev/null || true
       - mkdir -p SlimBindings/generated
       - |
-        cd {{.BINDINGS_DIR}} && uniffi-bindgen-cs \
-          --library '{{.LIB_PATH}}' \
-          --out-dir '{{.TASKFILE_DIR}}/SlimBindings/generated'
-      - task: copy-native-lib
-      - echo "C# bindings generated in SlimBindings/generated/"
-
-  # ---------------------------------------------------------------------------
-  # Cross-compilation
-  # ---------------------------------------------------------------------------
-
-  install-targets:
-    desc: Install Rust cross-compilation targets
-    cmds:
-      - echo "Installing Rust targets..."
-      - rustup target add {{.MACOS_TARGETS}} {{.LINUX_TARGETS}} {{.WINDOWS_TARGETS}}
-      - echo "Targets installed. Linux/Windows cross-compilation requires additional toolchains."
-    silent: true
-
-  build-target:
-    desc: "Build native library for a specific target (e.g., task build-target TARGET=x86_64-apple-darwin)"
-    deps:
-      - install-uniffi-bindgen-cs
-    cmds:
-      - task: cargo-build
-      - task: copy-native-lib
-    silent: true
-
-  build-macos:
-    desc: Build native libraries for all macOS targets
-    cmds:
-      - for target in {{.MACOS_TARGETS}}; do task build-target TARGET=$target; done
-    silent: true
-
-  build-all:
-    desc: Build native libraries for all targets (requires cross-compilation toolchains)
-    cmds:
-      - |
-        for target in {{.MACOS_TARGETS}} {{.LINUX_TARGETS}} {{.WINDOWS_TARGETS}}; do
-          echo "Building $target..."
-          task build-target TARGET=$target || echo "Failed to build $target (missing toolchain?)"
-        done
-      - echo "Build complete. Check runtimes/ directory."
-    silent: true
-
-  # ---------------------------------------------------------------------------
-  # Build and test
-  # ---------------------------------------------------------------------------
+        if [ -f "runtimes/osx-arm64/native/libslim_bindings.dylib" ]; then
+          lib="runtimes/osx-arm64/native/libslim_bindings.dylib"
+        elif [ -f "runtimes/osx-x64/native/libslim_bindings.dylib" ]; then
+          lib="runtimes/osx-x64/native/libslim_bindings.dylib"
+        elif [ -f "runtimes/linux-x64/native/libslim_bindings.so" ]; then
+          lib="runtimes/linux-x64/native/libslim_bindings.so"
+        else
+          echo "No native library found. Run 'task download' first." >&2
+          exit 1
+        fi
+        uniffi-bindgen-cs --library "$lib" --out-dir SlimBindings/generated
+      - echo "Bindings generated in SlimBindings/generated/"
 
   build:
     desc: Build the C# project
-    deps:
-      - generate
     cmds:
-      - echo "Building C# project..."
       - dotnet build SlimBindings.sln
-      - echo "Build complete"
-    silent: true
 
   test:
-    desc: Run all tests
-    deps:
-      - build
+    desc: Run tests
     cmds:
       - dotnet test SlimBindings.sln {{.CLI_ARGS}}
-    silent: true
 
   test:smoke:
     desc: Run smoke tests (no server required)
-    deps:
-      - build
     cmds:
       - dotnet test SlimBindings.sln --filter "Category!=Integration" {{.CLI_ARGS}}
-    silent: true
-
-  test:integration:
-    desc: Run integration tests (requires running server)
-    deps:
-      - build
-    cmds:
-      - dotnet test SlimBindings.sln --filter "Category=Integration" {{.CLI_ARGS}}
-    silent: true
 
   pack:
-    desc: Create NuGet package (includes native libraries from runtimes/)
+    desc: Create NuGet package
     cmds:
-      - echo "Creating NuGet package..."
       - dotnet pack SlimBindings/SlimBindings.csproj -c Release -o packages/
-      - echo "Package created in packages/"
-    silent: true
 
   clean:
     desc: Clean build artifacts
     cmds:
-      - echo "Cleaning..."
-      - rm -rf SlimBindings/generated
-      - rm -rf runtimes
-      - rm -rf packages
+      - rm -rf SlimBindings/generated runtimes packages artifacts
       - dotnet clean SlimBindings.sln 2>/dev/null || true
-      - echo "Clean complete"
-    silent: true
