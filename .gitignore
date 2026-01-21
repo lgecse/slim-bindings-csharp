@@ -3,10 +3,7 @@ bin/
 obj/
 packages/
 
-# Generated bindings (regenerate with `task generate`)
-SlimBindings/generated/
-
-# Native libraries
+# Native libraries (downloaded at build time)
 runtimes/
 
 # IDE
