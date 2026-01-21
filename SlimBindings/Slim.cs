@@ -87,21 +87,31 @@ public static class Slim
     /// </summary>
     /// <param name="endpoint">Server endpoint URL (e.g., "http://localhost:46357").</param>
     /// <returns>Connection ID.</returns>
+    /// <exception cref="SlimException">Thrown when connection fails.</exception>
     public static ulong Connect(string endpoint)
     {
-        var config = NewInsecureClientConfig(endpoint);
-        return GetGlobalService().Connect(config);
+        return SlimHelper.Try(() =>
+        {
+            var config = NewInsecureClientConfig(endpoint);
+            return GetGlobalService().Connect(config);
+        });
     }
 
     /// <summary>
     /// Connect to a SLIM server asynchronously using insecure (no TLS) configuration.
     /// </summary>
     /// <param name="endpoint">Server endpoint URL (e.g., "http://localhost:46357").</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Connection ID.</returns>
-    public static async Task<ulong> ConnectAsync(string endpoint)
+    /// <exception cref="SlimException">Thrown when connection fails.</exception>
+    public static async Task<ulong> ConnectAsync(string endpoint, CancellationToken cancellationToken = default)
     {
-        var config = NewInsecureClientConfig(endpoint);
-        return await GetGlobalService().ConnectAsync(config);
+        cancellationToken.ThrowIfCancellationRequested();
+        return await SlimHelper.TryAsync(async () =>
+        {
+            var config = NewInsecureClientConfig(endpoint);
+            return await GetGlobalService().ConnectAsync(config, cancellationToken);
+        });
     }
 
     /// <summary>
@@ -119,8 +129,10 @@ public static class Slim
     /// <summary>
     /// Shutdown SLIM asynchronously.
     /// </summary>
-    public static async Task ShutdownAsync()
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public static async Task ShutdownAsync(CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var service = Internal.SlimBindingsMethods.GetGlobalService();
         await service.ShutdownAsync();
         lock (_lock)
@@ -162,16 +174,18 @@ public sealed class SlimName : IDisposable
     /// <summary>
     /// Parse a name from "org/namespace/app" format.
     /// </summary>
+    /// <exception cref="ArgumentException">Thrown when the format is invalid or contains empty parts.</exception>
     public static SlimName Parse(string id)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
         var parts = id.Split('/');
-        if (parts.Length != 3)
+        if (parts.Length != 3 || parts.Any(string.IsNullOrWhiteSpace))
         {
             throw new ArgumentException(
-                $"Name must be in 'organization/namespace/app' format, got: {id}",
+                $"Name must be in 'organization/namespace/app' format with non-empty parts, got: '{id}'",
                 nameof(id));
         }
-        return new SlimName(parts[0], parts[1], parts[2]);
+        return new SlimName(parts[0].Trim(), parts[1].Trim(), parts[2].Trim());
     }
 
     /// <summary>
@@ -311,26 +325,32 @@ public sealed class SlimService : IDisposable
     /// </summary>
     /// <param name="config">Client configuration.</param>
     /// <returns>Connection ID.</returns>
+    /// <exception cref="SlimException">Thrown when connection fails.</exception>
     public ulong Connect(SlimClientConfig config)
     {
-        return _inner.Connect(config._inner);
+        return SlimHelper.Try(() => _inner.Connect(config._inner));
     }
 
     /// <summary>
     /// Connect to a remote SLIM server asynchronously.
     /// </summary>
-    public async Task<ulong> ConnectAsync(SlimClientConfig config)
+    /// <param name="config">Client configuration.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="SlimException">Thrown when connection fails.</exception>
+    public async Task<ulong> ConnectAsync(SlimClientConfig config, CancellationToken cancellationToken = default)
     {
-        return await _inner.ConnectAsync(config._inner);
+        cancellationToken.ThrowIfCancellationRequested();
+        return await SlimHelper.TryAsync(() => _inner.ConnectAsync(config._inner));
     }
 
     /// <summary>
     /// Disconnect a client connection.
     /// </summary>
     /// <param name="connectionId">Connection ID to disconnect.</param>
+    /// <exception cref="SlimException">Thrown when disconnect fails.</exception>
     public void Disconnect(ulong connectionId)
     {
-        _inner.Disconnect(connectionId);
+        SlimHelper.Try(() => _inner.Disconnect(connectionId));
     }
 
     public void Dispose()
@@ -347,6 +367,7 @@ public sealed class SlimService : IDisposable
 public sealed class SlimApp : IDisposable
 {
     internal readonly Internal.App _inner;
+    private SlimName? _cachedName;
     private bool _disposed;
 
     internal SlimApp(Internal.App inner)
@@ -358,24 +379,28 @@ public sealed class SlimApp : IDisposable
     public ulong Id => _inner.Id();
 
     /// <summary>Get the application name.</summary>
-    public SlimName Name => new(_inner.Name());
+    public SlimName Name => _cachedName ??= new(_inner.Name());
 
     /// <summary>
     /// Subscribe to receive messages for a name.
     /// </summary>
     /// <param name="name">Name to subscribe to.</param>
     /// <param name="connectionId">Optional connection ID to forward subscription.</param>
+    /// <exception cref="SlimException">Thrown when subscription fails.</exception>
     public void Subscribe(SlimName name, ulong? connectionId = null)
     {
-        _inner.Subscribe(name._inner, connectionId);
+        SlimHelper.Try(() => _inner.Subscribe(name._inner, connectionId));
     }
 
     /// <summary>
     /// Unsubscribe from a name.
     /// </summary>
+    /// <param name="name">Name to unsubscribe from.</param>
+    /// <param name="connectionId">Optional connection ID.</param>
+    /// <exception cref="SlimException">Thrown when unsubscription fails.</exception>
     public void Unsubscribe(SlimName name, ulong? connectionId = null)
     {
-        _inner.Unsubscribe(name._inner, connectionId);
+        SlimHelper.Try(() => _inner.Unsubscribe(name._inner, connectionId));
     }
 
     /// <summary>
@@ -383,17 +408,21 @@ public sealed class SlimApp : IDisposable
     /// </summary>
     /// <param name="destination">Destination name.</param>
     /// <param name="connectionId">Connection ID to route through.</param>
+    /// <exception cref="SlimException">Thrown when route setup fails.</exception>
     public void SetRoute(SlimName destination, ulong connectionId)
     {
-        _inner.SetRoute(destination._inner, connectionId);
+        SlimHelper.Try(() => _inner.SetRoute(destination._inner, connectionId));
     }
 
     /// <summary>
     /// Remove a route.
     /// </summary>
+    /// <param name="destination">Destination name.</param>
+    /// <param name="connectionId">Connection ID.</param>
+    /// <exception cref="SlimException">Thrown when route removal fails.</exception>
     public void RemoveRoute(SlimName destination, ulong connectionId)
     {
-        _inner.RemoveRoute(destination._inner, connectionId);
+        SlimHelper.Try(() => _inner.RemoveRoute(destination._inner, connectionId));
     }
 
     /// <summary>
@@ -401,56 +430,85 @@ public sealed class SlimApp : IDisposable
     /// </summary>
     /// <param name="destination">Destination name.</param>
     /// <param name="config">Optional session configuration.</param>
+    /// <exception cref="SlimException">Thrown when session creation fails.</exception>
     public SlimSession CreateSession(SlimName destination, SlimSessionConfig? config = null)
     {
-        config ??= new SlimSessionConfig();
-        var session = _inner.CreateSessionAndWait(config.ToInternal(), destination._inner);
-        return new SlimSession(session);
+        return SlimHelper.Try(() =>
+        {
+            config ??= new SlimSessionConfig();
+            var session = _inner.CreateSessionAndWait(config.ToInternal(), destination._inner);
+            return new SlimSession(session);
+        });
     }
 
     /// <summary>
     /// Create a session asynchronously.
     /// </summary>
-    public async Task<SlimSession> CreateSessionAsync(SlimName destination, SlimSessionConfig? config = null)
+    /// <param name="destination">Destination name.</param>
+    /// <param name="config">Optional session configuration.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="SlimException">Thrown when session creation fails.</exception>
+    public async Task<SlimSession> CreateSessionAsync(SlimName destination, SlimSessionConfig? config = null, CancellationToken cancellationToken = default)
     {
-        config ??= new SlimSessionConfig();
-        var session = await _inner.CreateSessionAndWaitAsync(config.ToInternal(), destination._inner);
-        return new SlimSession(session);
+        cancellationToken.ThrowIfCancellationRequested();
+        return await SlimHelper.TryAsync(async () =>
+        {
+            config ??= new SlimSessionConfig();
+            var session = await _inner.CreateSessionAndWaitAsync(config.ToInternal(), destination._inner);
+            return new SlimSession(session);
+        });
     }
 
     /// <summary>
     /// Listen for incoming sessions.
     /// </summary>
     /// <param name="timeout">Optional timeout duration.</param>
+    /// <exception cref="SlimException">Thrown when listening fails.</exception>
     public SlimSession ListenForSession(TimeSpan? timeout = null)
     {
-        var session = _inner.ListenForSession(timeout);
-        return new SlimSession(session);
+        return SlimHelper.Try(() =>
+        {
+            var session = _inner.ListenForSession(timeout);
+            return new SlimSession(session);
+        });
     }
 
     /// <summary>
     /// Listen for incoming sessions asynchronously.
     /// </summary>
-    public async Task<SlimSession> ListenForSessionAsync(TimeSpan? timeout = null)
+    /// <param name="timeout">Optional timeout duration.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="SlimException">Thrown when listening fails.</exception>
+    public async Task<SlimSession> ListenForSessionAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default)
     {
-        var session = await _inner.ListenForSessionAsync(timeout);
-        return new SlimSession(session);
+        cancellationToken.ThrowIfCancellationRequested();
+        return await SlimHelper.TryAsync(async () =>
+        {
+            var session = await _inner.ListenForSessionAsync(timeout);
+            return new SlimSession(session);
+        });
     }
 
     /// <summary>
     /// Delete a session and wait for completion.
     /// </summary>
+    /// <param name="session">Session to delete.</param>
+    /// <exception cref="SlimException">Thrown when session deletion fails.</exception>
     public void DeleteSession(SlimSession session)
     {
-        _inner.DeleteSessionAndWait(session._inner);
+        SlimHelper.Try(() => _inner.DeleteSessionAndWait(session._inner));
     }
 
     /// <summary>
     /// Delete a session asynchronously.
     /// </summary>
-    public async Task DeleteSessionAsync(SlimSession session)
+    /// <param name="session">Session to delete.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="SlimException">Thrown when session deletion fails.</exception>
+    public async Task DeleteSessionAsync(SlimSession session, CancellationToken cancellationToken = default)
     {
-        await _inner.DeleteSessionAndWaitAsync(session._inner);
+        cancellationToken.ThrowIfCancellationRequested();
+        await SlimHelper.TryAsync(() => _inner.DeleteSessionAndWaitAsync(session._inner));
     }
 
     /// <summary>
@@ -505,14 +563,19 @@ public sealed class SlimSession : IDisposable
     /// <param name="data">Message payload.</param>
     /// <param name="payloadType">Optional content type.</param>
     /// <param name="metadata">Optional metadata.</param>
+    /// <exception cref="SlimException">Thrown when publish fails.</exception>
     public void Publish(byte[] data, string? payloadType = null, Dictionary<string, string>? metadata = null)
     {
-        _inner.PublishAndWait(data, payloadType, metadata);
+        SlimHelper.Try(() => _inner.PublishAndWait(data, payloadType, metadata));
     }
 
     /// <summary>
     /// Publish a string message to the session destination.
     /// </summary>
+    /// <param name="message">Message string.</param>
+    /// <param name="payloadType">Optional content type.</param>
+    /// <param name="metadata">Optional metadata.</param>
+    /// <exception cref="SlimException">Thrown when publish fails.</exception>
     public void Publish(string message, string? payloadType = null, Dictionary<string, string>? metadata = null)
     {
         Publish(Encoding.UTF8.GetBytes(message), payloadType, metadata);
@@ -521,36 +584,58 @@ public sealed class SlimSession : IDisposable
     /// <summary>
     /// Publish a message asynchronously.
     /// </summary>
-    public async Task PublishAsync(byte[] data, string? payloadType = null, Dictionary<string, string>? metadata = null)
+    /// <param name="data">Message payload.</param>
+    /// <param name="payloadType">Optional content type.</param>
+    /// <param name="metadata">Optional metadata.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="SlimException">Thrown when publish fails.</exception>
+    public async Task PublishAsync(byte[] data, string? payloadType = null, Dictionary<string, string>? metadata = null, CancellationToken cancellationToken = default)
     {
-        await _inner.PublishAndWaitAsync(data, payloadType, metadata);
+        cancellationToken.ThrowIfCancellationRequested();
+        await SlimHelper.TryAsync(() => _inner.PublishAndWaitAsync(data, payloadType, metadata));
     }
 
     /// <summary>
     /// Publish a string message asynchronously.
     /// </summary>
-    public Task PublishAsync(string message, string? payloadType = null, Dictionary<string, string>? metadata = null)
+    /// <param name="message">Message string.</param>
+    /// <param name="payloadType">Optional content type.</param>
+    /// <param name="metadata">Optional metadata.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="SlimException">Thrown when publish fails.</exception>
+    public Task PublishAsync(string message, string? payloadType = null, Dictionary<string, string>? metadata = null, CancellationToken cancellationToken = default)
     {
-        return PublishAsync(Encoding.UTF8.GetBytes(message), payloadType, metadata);
+        return PublishAsync(Encoding.UTF8.GetBytes(message), payloadType, metadata, cancellationToken);
     }
 
     /// <summary>
     /// Receive a message from the session.
     /// </summary>
     /// <param name="timeout">Optional timeout duration.</param>
+    /// <exception cref="SlimException">Thrown when receive fails.</exception>
     public SlimMessage GetMessage(TimeSpan? timeout = null)
     {
-        var msg = _inner.GetMessage(timeout);
-        return new SlimMessage(msg);
+        return SlimHelper.Try(() =>
+        {
+            var msg = _inner.GetMessage(timeout);
+            return new SlimMessage(msg);
+        });
     }
 
     /// <summary>
     /// Receive a message asynchronously.
     /// </summary>
-    public async Task<SlimMessage> GetMessageAsync(TimeSpan? timeout = null)
+    /// <param name="timeout">Optional timeout duration.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="SlimException">Thrown when receive fails.</exception>
+    public async Task<SlimMessage> GetMessageAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default)
     {
-        var msg = await _inner.GetMessageAsync(timeout);
-        return new SlimMessage(msg);
+        cancellationToken.ThrowIfCancellationRequested();
+        return await SlimHelper.TryAsync(async () =>
+        {
+            var msg = await _inner.GetMessageAsync(timeout);
+            return new SlimMessage(msg);
+        });
     }
 
     /// <summary>
@@ -560,14 +645,20 @@ public sealed class SlimSession : IDisposable
     /// <param name="data">Reply payload.</param>
     /// <param name="payloadType">Optional content type.</param>
     /// <param name="metadata">Optional metadata.</param>
+    /// <exception cref="SlimException">Thrown when reply fails.</exception>
     public void Reply(SlimMessage originalMessage, byte[] data, string? payloadType = null, Dictionary<string, string>? metadata = null)
     {
-        _inner.PublishToAndWait(originalMessage._context, data, payloadType, metadata);
+        SlimHelper.Try(() => _inner.PublishToAndWait(originalMessage._context, data, payloadType, metadata));
     }
 
     /// <summary>
     /// Reply to a received message with a string.
     /// </summary>
+    /// <param name="originalMessage">The message to reply to.</param>
+    /// <param name="message">Reply message string.</param>
+    /// <param name="payloadType">Optional content type.</param>
+    /// <param name="metadata">Optional metadata.</param>
+    /// <exception cref="SlimException">Thrown when reply fails.</exception>
     public void Reply(SlimMessage originalMessage, string message, string? payloadType = null, Dictionary<string, string>? metadata = null)
     {
         Reply(originalMessage, Encoding.UTF8.GetBytes(message), payloadType, metadata);
@@ -576,17 +667,30 @@ public sealed class SlimSession : IDisposable
     /// <summary>
     /// Reply to a received message asynchronously.
     /// </summary>
-    public async Task ReplyAsync(SlimMessage originalMessage, byte[] data, string? payloadType = null, Dictionary<string, string>? metadata = null)
+    /// <param name="originalMessage">The message to reply to.</param>
+    /// <param name="data">Reply payload.</param>
+    /// <param name="payloadType">Optional content type.</param>
+    /// <param name="metadata">Optional metadata.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="SlimException">Thrown when reply fails.</exception>
+    public async Task ReplyAsync(SlimMessage originalMessage, byte[] data, string? payloadType = null, Dictionary<string, string>? metadata = null, CancellationToken cancellationToken = default)
     {
-        await _inner.PublishToAndWaitAsync(originalMessage._context, data, payloadType, metadata);
+        cancellationToken.ThrowIfCancellationRequested();
+        await SlimHelper.TryAsync(() => _inner.PublishToAndWaitAsync(originalMessage._context, data, payloadType, metadata));
     }
 
     /// <summary>
     /// Reply to a received message asynchronously with a string.
     /// </summary>
-    public Task ReplyAsync(SlimMessage originalMessage, string message, string? payloadType = null, Dictionary<string, string>? metadata = null)
+    /// <param name="originalMessage">The message to reply to.</param>
+    /// <param name="message">Reply message string.</param>
+    /// <param name="payloadType">Optional content type.</param>
+    /// <param name="metadata">Optional metadata.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="SlimException">Thrown when reply fails.</exception>
+    public Task ReplyAsync(SlimMessage originalMessage, string message, string? payloadType = null, Dictionary<string, string>? metadata = null, CancellationToken cancellationToken = default)
     {
-        return ReplyAsync(originalMessage, Encoding.UTF8.GetBytes(message), payloadType, metadata);
+        return ReplyAsync(originalMessage, Encoding.UTF8.GetBytes(message), payloadType, metadata, cancellationToken);
     }
 
     /// <summary>
@@ -600,17 +704,21 @@ public sealed class SlimSession : IDisposable
     /// <summary>
     /// Invite a participant to the session.
     /// </summary>
+    /// <param name="participant">Participant to invite.</param>
+    /// <exception cref="SlimException">Thrown when invite fails.</exception>
     public void Invite(SlimName participant)
     {
-        _inner.InviteAndWait(participant._inner);
+        SlimHelper.Try(() => _inner.InviteAndWait(participant._inner));
     }
 
     /// <summary>
     /// Remove a participant from the session.
     /// </summary>
+    /// <param name="participant">Participant to remove.</param>
+    /// <exception cref="SlimException">Thrown when remove fails.</exception>
     public void Remove(SlimName participant)
     {
-        _inner.RemoveAndWait(participant._inner);
+        SlimHelper.Try(() => _inner.RemoveAndWait(participant._inner));
     }
 
     public void Dispose()
@@ -626,7 +734,15 @@ public sealed class SlimSession : IDisposable
 /// </summary>
 public class SlimException : Exception
 {
-    internal SlimException(Exception inner) : base(inner.Message, inner) { }
+    /// <summary>
+    /// Creates a new SlimException wrapping an inner exception.
+    /// </summary>
+    public SlimException(string message, Exception? inner = null) : base(message, inner) { }
+
+    /// <summary>
+    /// Creates a SlimException from an FFI exception.
+    /// </summary>
+    internal static SlimException FromFfi(Exception ex) => new(ex.Message, ex);
     
     /// <summary>
     /// Check if this is a timeout error.
@@ -644,6 +760,73 @@ public class SlimException : Exception
     public bool IsTransient => IsTimeout || 
         Message.Contains("temporarily", StringComparison.OrdinalIgnoreCase) ||
         Message.Contains("retry", StringComparison.OrdinalIgnoreCase);
+}
+
+/// <summary>
+/// Internal helper for executing operations with exception translation.
+/// Catches FFI exceptions and translates them to SlimException.
+/// </summary>
+internal static class SlimHelper
+{
+    /// <summary>
+    /// Executes an action with SlimException handling.
+    /// </summary>
+    public static void Try(Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception ex) when (ex is not SlimException and not OperationCanceledException)
+        {
+            throw SlimException.FromFfi(ex);
+        }
+    }
+
+    /// <summary>
+    /// Executes a function with SlimException handling.
+    /// </summary>
+    public static T Try<T>(Func<T> func)
+    {
+        try
+        {
+            return func();
+        }
+        catch (Exception ex) when (ex is not SlimException and not OperationCanceledException)
+        {
+            throw SlimException.FromFfi(ex);
+        }
+    }
+
+    /// <summary>
+    /// Executes an async function with SlimException handling.
+    /// </summary>
+    public static async Task TryAsync(Func<Task> func)
+    {
+        try
+        {
+            await func();
+        }
+        catch (Exception ex) when (ex is not SlimException and not OperationCanceledException)
+        {
+            throw SlimException.FromFfi(ex);
+        }
+    }
+
+    /// <summary>
+    /// Executes an async function with SlimException handling.
+    /// </summary>
+    public static async Task<T> TryAsync<T>(Func<Task<T>> func)
+    {
+        try
+        {
+            return await func();
+        }
+        catch (Exception ex) when (ex is not SlimException and not OperationCanceledException)
+        {
+            throw SlimException.FromFfi(ex);
+        }
+    }
 }
 
 /// <summary>

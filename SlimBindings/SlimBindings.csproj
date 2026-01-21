@@ -9,8 +9,13 @@
     <Description>C# bindings for SLIM (Secure Low-Latency Interactive Messaging)</Description>
     <PackageTags>slim;messaging;secure;low-latency;ffi;agntcy;uniffi</PackageTags>
     <RepositoryUrl>https://github.com/agntcy/slim-bindings-csharp</RepositoryUrl>
-    <License>Apache-2.0</License>
+    <PackageProjectUrl>https://github.com/agntcy/slim-bindings-csharp</PackageProjectUrl>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    
+    <!-- Symbol package for debugging -->
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
 
   <!-- Include native libraries in the NuGet package using standard runtime structure -->
