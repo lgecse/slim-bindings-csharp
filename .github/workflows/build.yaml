@@ -54,6 +54,12 @@ jobs:
           repository: agntcy/slim
           path: slim
 
+      - name: Install Linux Build Dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake clang build-essential
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
