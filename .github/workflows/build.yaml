@@ -27,7 +27,7 @@ jobs:
             target: aarch64-apple-darwin
             rid: osx-arm64
             lib: libslim_bindings.dylib
-          - os: macos-13
+          - os: macos-15-intel
             target: x86_64-apple-darwin
             rid: osx-x64
             lib: libslim_bindings.dylib
