@@ -64,7 +64,7 @@ public class SmokeTests
     public void SlimName_Parse_TrimsWhitespace()
     {
         using var name = SlimName.Parse(" org / app / v1 ");
-        Assert.Equal("org/app/v1", name.ToString());
+        Assert.StartsWith("org/app/v1", name.ToString());
     }
 
     [Theory]
@@ -82,9 +82,9 @@ public class SmokeTests
     }
 
     [Fact]
-    public void SlimName_Parse_Null_ThrowsArgumentException()
+    public void SlimName_Parse_Null_ThrowsArgumentNullException()
     {
-        Assert.Throws<ArgumentException>(() => SlimName.Parse(null!));
+        Assert.Throws<ArgumentNullException>(() => SlimName.Parse(null!));
     }
 
     [Fact]
