@@ -13,7 +13,6 @@ on:
 
 env:
   DOTNET_VERSION: "8.0.x"
-  SLIM_BINDINGS_VERSION: "0.7.3"
 
 jobs:
   build:
@@ -26,53 +25,19 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
+      - uses: arduino/setup-task@v2
+
       - name: Download native libraries
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release download slim-bindings-libs-v${{ env.SLIM_BINDINGS_VERSION }} \
-            --repo agntcy/slim --pattern "*.zip" --dir artifacts/
-          
-          for zip in artifacts/*.zip; do
-            target="${zip#artifacts/slim-bindings-}"
-            target="${target%.zip}"
-            case "$target" in
-              x86_64-unknown-linux-gnu)   rid="linux-x64" ;;
-              x86_64-unknown-linux-musl)  rid="linux-musl-x64" ;;
-              aarch64-unknown-linux-gnu)  rid="linux-arm64" ;;
-              aarch64-unknown-linux-musl) rid="linux-musl-arm64" ;;
-              x86_64-apple-darwin)        rid="osx-x64" ;;
-              aarch64-apple-darwin)       rid="osx-arm64" ;;
-              x86_64-pc-windows-msvc)     rid="win-x64" ;;
-              x86_64-pc-windows-gnu)      rid="win-x64-gnu" ;;
-              *) continue ;;
-            esac
-            mkdir -p "runtimes/$rid/native"
-            unzip -j "$zip" -d "runtimes/$rid/native/"
-            for f in runtimes/$rid/native/*slim_bindings*; do
-              case "$f" in
-                *.so)    mv "$f" "runtimes/$rid/native/libslim_bindings.so" ;;
-                *.dylib) mv "$f" "runtimes/$rid/native/libslim_bindings.dylib" ;;
-                *.dll)   mv "$f" "runtimes/$rid/native/slim_bindings.dll" ;;
-              esac
-            done
-          done
-          rm -rf artifacts
+        run: task download
 
-      - name: Build
-        run: dotnet build Slim.sln -c Release
-
-      - name: Copy native library to test output
-        run: |
-          cp runtimes/linux-x64/native/libslim_bindings.so \
-             Slim.Tests/bin/Release/net8.0/
-
-      - name: Test
-        run: dotnet test Slim.sln -c Release --filter "Category!=Integration" --no-build
+      - name: Build & Test
+        run: task test:ci
 
       - name: Create NuGet package
         if: github.event_name == 'push'
-        run: dotnet pack Slim/Slim.csproj -c Release -o packages/
+        run: task pack
 
       - name: Upload package
         if: github.event_name == 'push'

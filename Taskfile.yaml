@@ -7,6 +7,7 @@ vars:
   SLIM_BINDINGS_VERSION: '{{.SLIM_BINDINGS_VERSION | default "0.7.3"}}'
   SLIM_DIR: '{{.SLIM_DIR | default "../slim"}}'
   UNIFFI_BINDGEN_CS_VERSION: "v0.9.0+v0.28.3"
+  CONFIG: '{{.CONFIG | default "Release"}}'
 
 tasks:
   default:
@@ -17,7 +18,6 @@ tasks:
     desc: Download pre-built native libraries for local development
     cmds:
       - task: download
-      - echo "Setup complete. Run 'task build' to build."
 
   download:
     desc: Download pre-built native libraries from slim release
@@ -30,30 +30,30 @@ tasks:
           target="${target%.zip}"
           case "$target" in
             x86_64-unknown-linux-gnu)   rid="linux-x64" ;;
-            x86_64-unknown-linux-musl)  rid="linux-musl-x64" ;;
             aarch64-unknown-linux-gnu)  rid="linux-arm64" ;;
-            aarch64-unknown-linux-musl) rid="linux-musl-arm64" ;;
             x86_64-apple-darwin)        rid="osx-x64" ;;
             aarch64-apple-darwin)       rid="osx-arm64" ;;
             x86_64-pc-windows-msvc)     rid="win-x64" ;;
-            x86_64-pc-windows-gnu)      rid="win-x64-gnu" ;;
             *) continue ;;
           esac
           mkdir -p "runtimes/$rid/native"
           unzip -oj "$zip" -d "runtimes/$rid/native/"
-          for f in runtimes/$rid/native/*slim_bindings*; do
+        done
+        rm -rf artifacts
+        find runtimes -type f ! \( -name "*.so" -o -name "*.dylib" -o -name "*.dll" \) -delete
+        for dir in runtimes/*/native; do
+          for f in "$dir"/*slim_bindings*; do
+            [ -f "$f" ] || continue
             case "$f" in
-              *.so)    mv "$f" "runtimes/$rid/native/libslim_bindings.so" ;;
-              *.dylib) mv "$f" "runtimes/$rid/native/libslim_bindings.dylib" ;;
-              *.dll)   mv "$f" "runtimes/$rid/native/slim_bindings.dll" ;;
+              *.so)    mv "$f" "$dir/libslim_bindings.so" ;;
+              *.dylib) mv "$f" "$dir/libslim_bindings.dylib" ;;
+              *.dll)   mv "$f" "$dir/slim_bindings.dll" ;;
             esac
           done
         done
-        rm -rf artifacts
-      - echo "Libraries downloaded to runtimes/"
 
   regenerate:
-    desc: Regenerate C# bindings when upstream slim changes (requires slim repo)
+    desc: Regenerate C# bindings (requires slim repo at ../slim)
     cmds:
       - |
         if [ ! -d "{{.SLIM_DIR}}/data-plane/bindings/rust" ]; then
@@ -74,22 +74,28 @@ tasks:
         fi
         cd {{.SLIM_DIR}}/data-plane/bindings/rust
         uniffi-bindgen-cs --library "$lib" --out-dir "$OLDPWD/Slim/generated"
-      - echo "Bindings regenerated. Commit Slim/generated/ if changed."
 
   build:
     desc: Build the C# project
     cmds:
-      - dotnet build Slim.sln
+      - dotnet build Slim.sln -c {{.CONFIG}}
 
   test:
-    desc: Run tests
+    desc: Run all tests
     cmds:
-      - dotnet test Slim.sln {{.CLI_ARGS}}
+      - dotnet test Slim.sln -c {{.CONFIG}} {{.CLI_ARGS}}
 
   test:smoke:
     desc: Run smoke tests (no server required)
     cmds:
-      - dotnet test Slim.sln --filter "Category!=Integration" {{.CLI_ARGS}}
+      - dotnet test Slim.sln -c {{.CONFIG}} --filter "Category!=Integration" {{.CLI_ARGS}}
+
+  test:ci:
+    desc: Run smoke tests in CI (copies native lib to output)
+    cmds:
+      - task: build
+      - cp runtimes/linux-x64/native/libslim_bindings.so Slim.Tests/bin/{{.CONFIG}}/net8.0/
+      - dotnet test Slim.sln -c {{.CONFIG}} --filter "Category!=Integration" --no-build
 
   pack:
     desc: Create NuGet package
