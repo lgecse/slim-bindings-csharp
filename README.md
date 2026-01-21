@@ -62,17 +62,17 @@ The NuGet package includes native libraries for all supported platforms. No addi
 
 **Smoke tests** (no server required):
 ```bash
-task test -- --filter "Category!=Integration"
+task test:smoke
 ```
 
 **Integration tests** (requires running server):
 ```bash
 # Terminal 1: Start the server
 cd ../slim/data-plane
-task data-plane:run:server
+task run:server
 
 # Terminal 2: Run integration tests
-task test -- --filter "Category=Integration"
+task test:integration
 ```
 
 **All tests:**
@@ -85,12 +85,14 @@ task test
 ### Available Tasks
 
 ```bash
-task              # List all available tasks
-task generate     # Generate C# bindings (builds Rust library first)
-task build        # Build the .NET solution (runs generate first)
-task test         # Run tests
-task pack         # Create NuGet package
-task clean        # Clean all build artifacts
+task                  # List all available tasks
+task generate         # Generate C# bindings (builds Rust library first)
+task build            # Build the .NET solution (runs generate first)
+task test             # Run all tests
+task test:smoke       # Run smoke tests (no server required)
+task test:integration # Run integration tests (requires server)
+task pack             # Create NuGet package
+task clean            # Clean all build artifacts
 ```
 
 ### Regenerating Bindings
