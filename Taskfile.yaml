@@ -5,6 +5,7 @@ version: "3"
 
 vars:
   SLIM_BINDINGS_VERSION: '{{.SLIM_BINDINGS_VERSION | default "0.7.3"}}'
+  SLIM_DIR: '{{.SLIM_DIR | default "../slim"}}'
   UNIFFI_BINDGEN_CS_VERSION: "v0.9.0+v0.28.3"
 
 tasks:
@@ -13,10 +14,10 @@ tasks:
       - task -l
 
   setup:
-    desc: Download pre-built libraries and generate C# bindings
+    desc: Download pre-built native libraries for local development
     cmds:
       - task: download
-      - task: generate-bindings
+      - echo "Setup complete. Run 'task build' to build."
 
   download:
     desc: Download pre-built native libraries from slim release
@@ -52,23 +53,28 @@ tasks:
       - echo "Libraries downloaded to runtimes/"
 
   generate-bindings:
-    desc: Generate C# bindings from native library
+    desc: Regenerate C# bindings (requires slim repo at ../slim)
     cmds:
-      - cargo install uniffi-bindgen-cs --git https://github.com/NordSecurity/uniffi-bindgen-cs.git --tag {{.UNIFFI_BINDGEN_CS_VERSION}} 2>/dev/null || true
-      - mkdir -p SlimBindings/generated
       - |
-        if [ -f "runtimes/osx-arm64/native/libslim_bindings.dylib" ]; then
-          lib="runtimes/osx-arm64/native/libslim_bindings.dylib"
-        elif [ -f "runtimes/osx-x64/native/libslim_bindings.dylib" ]; then
-          lib="runtimes/osx-x64/native/libslim_bindings.dylib"
-        elif [ -f "runtimes/linux-x64/native/libslim_bindings.so" ]; then
-          lib="runtimes/linux-x64/native/libslim_bindings.so"
-        else
-          echo "No native library found. Run 'task download' first." >&2
+        if [ ! -d "{{.SLIM_DIR}}/data-plane/bindings/rust" ]; then
+          echo "Error: slim repo not found at {{.SLIM_DIR}}" >&2
+          echo "Clone it with: git clone https://github.com/agntcy/slim.git {{.SLIM_DIR}}" >&2
           exit 1
         fi
-        uniffi-bindgen-cs --library "$lib" --out-dir SlimBindings/generated
-      - echo "Bindings generated in SlimBindings/generated/"
+      - cargo install uniffi-bindgen-cs --git https://github.com/NordSecurity/uniffi-bindgen-cs.git --tag {{.UNIFFI_BINDGEN_CS_VERSION}} 2>/dev/null || true
+      - |
+        cd {{.SLIM_DIR}}/data-plane/bindings/rust
+        cargo build --release
+      - |
+        if [ "$(uname -s)" = "Darwin" ]; then
+          lib="{{.SLIM_DIR}}/data-plane/target/release/libslim_bindings.dylib"
+        else
+          lib="{{.SLIM_DIR}}/data-plane/target/release/libslim_bindings.so"
+        fi
+        mkdir -p SlimBindings/generated
+        cd {{.SLIM_DIR}}/data-plane/bindings/rust
+        uniffi-bindgen-cs --library "$lib" --out-dir "$(pwd)/../../../../slim-bindings-csharp/SlimBindings/generated"
+      - echo "Bindings regenerated in SlimBindings/generated/"
 
   build:
     desc: Build the C# project
@@ -93,5 +99,5 @@ tasks:
   clean:
     desc: Clean build artifacts
     cmds:
-      - rm -rf SlimBindings/generated runtimes packages artifacts
+      - rm -rf runtimes packages artifacts
       - dotnet clean SlimBindings.sln 2>/dev/null || true

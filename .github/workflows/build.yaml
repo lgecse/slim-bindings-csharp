@@ -50,7 +50,6 @@ jobs:
             esac
             mkdir -p "runtimes/$rid/native"
             unzip -j "$zip" -d "runtimes/$rid/native/"
-            # Rename to standard name
             for f in runtimes/$rid/native/*slim_bindings*; do
               case "$f" in
                 *.so)    mv "$f" "runtimes/$rid/native/libslim_bindings.so" ;;
@@ -60,18 +59,6 @@ jobs:
             done
           done
           rm -rf artifacts
-
-      - name: Generate C# bindings
-        run: |
-          # Install uniffi-bindgen-cs (cached via cargo)
-          cargo install uniffi-bindgen-cs \
-            --git https://github.com/NordSecurity/uniffi-bindgen-cs.git \
-            --tag v0.9.0+v0.28.3 2>/dev/null || true
-          
-          mkdir -p SlimBindings/generated
-          ~/.cargo/bin/uniffi-bindgen-cs \
-            --library runtimes/linux-x64/native/libslim_bindings.so \
-            --out-dir SlimBindings/generated
 
       - name: Build and test
         run: |
