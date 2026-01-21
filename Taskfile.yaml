@@ -1,0 +1,162 @@
+# Copyright AGNTCY Contributors (https://github.com/agntcy)
+# SPDX-License-Identifier: Apache-2.0
+
+version: "3"
+
+vars:
+  # The Rust UniFFI bindings crate - relative to slim repo
+  SLIM_DIR: '{{.SLIM_DIR | default "../slim"}}'
+  # Absolute path to SLIM directory for commands that cd elsewhere
+  SLIM_DIR_ABS:
+    sh: 'cd {{.SLIM_DIR | default "../slim"}} && pwd'
+  BINDINGS_DIR: "{{.SLIM_DIR}}/data-plane/bindings/rust"
+  BINDINGS_DIR_ABS:
+    sh: 'cd {{.SLIM_DIR | default "../slim"}}/data-plane/bindings/rust && pwd'
+  PROFILE: '{{.PROFILE | default "release"}}'
+  CURRENT_TARGET:
+    sh: 'rustc -vV | sed -n "s|host: ||p"'
+  TARGET: "{{.TARGET | default .CURRENT_TARGET}}"
+  TARGET_DIR: "{{.SLIM_DIR_ABS}}/data-plane/target/{{.TARGET}}/{{.PROFILE}}"
+  LIB_NAME: slim_bindings
+  # Dynamic library path for uniffi-bindgen-cs (requires .dylib/.so/.dll)
+  _DEFAULT_LIB_PATH:
+    sh: |
+      # Detect OS to determine dynamic library extension
+      OS=$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')
+      case "$OS" in
+        darwin*)
+          echo "{{.TARGET_DIR}}/lib{{.LIB_NAME}}.dylib"
+          ;;
+        mingw*|msys*|cygwin*)
+          echo "{{.TARGET_DIR}}/{{.LIB_NAME}}.dll"
+          ;;
+        *)
+          echo "{{.TARGET_DIR}}/lib{{.LIB_NAME}}.so"
+          ;;
+      esac
+  LIB_PATH: "{{.LIB_PATH | default ._DEFAULT_LIB_PATH}}"
+  # uniffi-bindgen-cs version matching UniFFI 0.28.3
+  UNIFFI_BINDGEN_CS_VERSION: "v0.9.0+v0.28.3"
+
+tasks:
+  default:
+    cmds:
+      - task -l
+
+  install-uniffi-bindgen-cs:
+    internal: true
+    status:
+      - which uniffi-bindgen-cs
+    cmds:
+      - echo "Installing uniffi-bindgen-cs..."
+      - cargo install uniffi-bindgen-cs --git https://github.com/NordSecurity/uniffi-bindgen-cs.git --tag {{.UNIFFI_BINDGEN_CS_VERSION}} --config net.git-fetch-with-cli=true
+    silent: true
+
+  build-rust:
+    internal: true
+    dir: "{{.BINDINGS_DIR}}"
+    cmds:
+      - echo "Building Rust UniFFI library ({{.PROFILE}})..."
+      - cargo build {{if eq .PROFILE "release"}}--release {{end}}--target {{.TARGET}}
+      - echo "Built {{.LIB_PATH}}"
+    silent: true
+
+  run-bindgen:
+    internal: true
+    cmds:
+      - echo "Generating C# bindings from compiled library..."
+      - mkdir -p SlimBindings/generated
+      - |
+        cd {{.BINDINGS_DIR}} && uniffi-bindgen-cs \
+          --library '{{.LIB_PATH}}' \
+          --out-dir '{{.TASKFILE_DIR}}/SlimBindings/generated'
+      - task: copy-library
+      - echo "C# bindings generated in SlimBindings/generated/"
+    silent: true
+
+  generate:
+    desc: Generate C# bindings from compiled library
+    deps:
+      - install-uniffi-bindgen-cs
+      - build-rust
+    cmds:
+      - task: run-bindgen
+
+  copy-library:
+    internal: true
+    vars:
+      DYLIB_PATH: "{{.TARGET_DIR}}/lib{{.LIB_NAME}}.dylib"
+      SO_PATH: "{{.TARGET_DIR}}/lib{{.LIB_NAME}}.so"
+      DLL_PATH: "{{.TARGET_DIR}}/{{.LIB_NAME}}.dll"
+      # Map Rust target to .NET Runtime Identifier (RID)
+      RID:
+        sh: |
+          case "{{.TARGET}}" in
+            aarch64-apple-darwin)       echo "osx-arm64" ;;
+            x86_64-apple-darwin)        echo "osx-x64" ;;
+            aarch64-unknown-linux-gnu)  echo "linux-arm64" ;;
+            x86_64-unknown-linux-gnu)   echo "linux-x64" ;;
+            aarch64-unknown-linux-musl) echo "linux-musl-arm64" ;;
+            x86_64-unknown-linux-musl)  echo "linux-musl-x64" ;;
+            x86_64-pc-windows-gnu)      echo "win-x64" ;;
+            x86_64-pc-windows-msvc)     echo "win-x64" ;;
+            aarch64-pc-windows-msvc)    echo "win-arm64" ;;
+            *)                          echo "{{.TARGET}}" ;;
+          esac
+    cmds:
+      - mkdir -p runtimes/{{.RID}}/native
+      - |
+        DEST="runtimes/{{.RID}}/native"
+        if [ -f "{{.DYLIB_PATH}}" ]; then
+          cp "{{.DYLIB_PATH}}" "$DEST/lib{{.LIB_NAME}}.dylib"
+        elif [ -f "{{.SO_PATH}}" ]; then
+          cp "{{.SO_PATH}}" "$DEST/lib{{.LIB_NAME}}.so"
+        elif [ -f "{{.DLL_PATH}}" ]; then
+          cp "{{.DLL_PATH}}" "$DEST/{{.LIB_NAME}}.dll"
+        else
+          echo "Error: No dynamic library (.dylib/.so/.dll) found in {{.TARGET_DIR}}" >&2
+          exit 1
+        fi
+        echo "Copied native library to $DEST/ ({{.TARGET}} -> {{.RID}})"
+    silent: true
+
+  # ---------------------------------------------------------------------------
+  # Build and test
+  # ---------------------------------------------------------------------------
+
+  build:
+    desc: Build the C# project
+    deps:
+      - generate
+    cmds:
+      - echo "Building C# project..."
+      - dotnet build SlimBindings.sln
+      - echo "Build complete"
+    silent: true
+
+  test:
+    desc: Run tests
+    deps:
+      - build
+    cmds:
+      - dotnet test SlimBindings.sln
+    silent: true
+
+  pack:
+    desc: Create NuGet package (includes native libraries from runtimes/)
+    cmds:
+      - echo "Creating NuGet package..."
+      - dotnet pack SlimBindings/SlimBindings.csproj -c Release -o packages/
+      - echo "Package created in packages/"
+    silent: true
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - echo "Cleaning..."
+      - rm -rf SlimBindings/generated
+      - rm -rf runtimes
+      - rm -rf packages
+      - dotnet clean SlimBindings.sln 2>/dev/null || true
+      - echo "Clean complete"
+    silent: true

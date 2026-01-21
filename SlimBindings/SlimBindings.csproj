@@ -1,0 +1,60 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Package Info -->
+    <PackageId>Agntcy.SlimBindings</PackageId>
+    <Version>0.7.0</Version>
+    <Authors>AGNTCY Contributors</Authors>
+    <Company>AGNTCY</Company>
+    <Description>C# bindings for SLIM (Secure Low-Latency Interactive Messaging)</Description>
+    <PackageTags>slim;messaging;secure;low-latency;ffi;agntcy;uniffi</PackageTags>
+    <RepositoryUrl>https://github.com/agntcy/slim-bindings-csharp</RepositoryUrl>
+    <License>Apache-2.0</License>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <!-- Include native libraries in the NuGet package using standard runtime structure -->
+  <ItemGroup>
+    <!-- NuGet runtime folder structure: runtimes/{rid}/native/{library} -->
+    <None Include="..\runtimes\**\*" Pack="true" PackagePath="runtimes" />
+    <None Include="..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!-- 
+    Native library loading at build/runtime.
+    .NET automatically loads from runtimes/{rid}/native/ when using NuGet,
+    but for local development we copy to output directory.
+    
+    The DllImport("uniffi_slim_bindings") will resolve to:
+    - Windows: uniffi_slim_bindings.dll
+    - Linux:   libuniffi_slim_bindings.so
+    - macOS:   libuniffi_slim_bindings.dylib
+  -->
+  
+  <!-- macOS native libraries -->
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <None Include="..\runtimes\osx-x64\native\*.dylib" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" Condition="Exists('..\runtimes\osx-x64\native\')" />
+    <None Include="..\runtimes\osx-arm64\native\*.dylib" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" Condition="Exists('..\runtimes\osx-arm64\native\')" />
+    <!-- Fallback to legacy location -->
+    <None Include="..\runtimes\aarch64-apple-darwin\native\*.dylib" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" Condition="Exists('..\runtimes\aarch64-apple-darwin\native\')" />
+    <None Include="..\runtimes\x86_64-apple-darwin\native\*.dylib" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" Condition="Exists('..\runtimes\x86_64-apple-darwin\native\')" />
+  </ItemGroup>
+
+  <!-- Linux native libraries -->
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+    <None Include="..\runtimes\linux-x64\native\*.so" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" Condition="Exists('..\runtimes\linux-x64\native\')" />
+    <None Include="..\runtimes\linux-arm64\native\*.so" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" Condition="Exists('..\runtimes\linux-arm64\native\')" />
+    <!-- Fallback to legacy location -->
+    <None Include="..\runtimes\aarch64-unknown-linux-gnu\native\*.so" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" Condition="Exists('..\runtimes\aarch64-unknown-linux-gnu\native\')" />
+    <None Include="..\runtimes\x86_64-unknown-linux-gnu\native\*.so" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" Condition="Exists('..\runtimes\x86_64-unknown-linux-gnu\native\')" />
+  </ItemGroup>
+
+  <!-- Windows native libraries -->
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <None Include="..\runtimes\win-x64\native\*.dll" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" Condition="Exists('..\runtimes\win-x64\native\')" />
+    <None Include="..\runtimes\win-arm64\native\*.dll" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" Condition="Exists('..\runtimes\win-arm64\native\')" />
+    <!-- Fallback to legacy location -->
+    <None Include="..\runtimes\x86_64-pc-windows-gnu\native\*.dll" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" Condition="Exists('..\runtimes\x86_64-pc-windows-gnu\native\')" />
+  </ItemGroup>
+
+</Project>
